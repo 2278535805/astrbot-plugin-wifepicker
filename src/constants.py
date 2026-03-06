@@ -24,25 +24,4 @@ _DEFAULT_KEYWORD_ROUTES: tuple[KeywordRoute, ...] = (
     KeywordRoute(keyword="老婆插件帮助", action="show_help"),
     KeywordRoute(keyword="clpbz", action="show_help"),
 
-    KeywordRoute(
-        keyword="重置记录",
-        action="reset_records",
-        permission=PermissionLevel.ADMIN,
-    ),
-    KeywordRoute(
-        keyword="czjl",
-        action="reset_records",
-        permission=PermissionLevel.ADMIN,
-    ),
-    
-    KeywordRoute(
-        keyword="重置强娶时间",
-        action="reset_force_cd",
-        permission=PermissionLevel.ADMIN,
-    ),
-    KeywordRoute(
-        keyword="czqqsj",
-        action="reset_force_cd",
-        permission=PermissionLevel.ADMIN,
-    ),
 )

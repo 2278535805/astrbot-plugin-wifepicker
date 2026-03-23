@@ -91,5 +91,11 @@
             "max": 60,
             "step": 1
         }
+    },
+    "allow_marry_bot": {
+        "type": "bool",
+        "description": "允许强娶/抽取机器人",
+        "hint": "开启后，机器人（Bot）也会进入老婆池，并可以被强娶。默认关闭。",
+        "default": false
     }
 }

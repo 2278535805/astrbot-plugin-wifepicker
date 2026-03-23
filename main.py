@@ -282,7 +282,9 @@ class RandomWifePlugin(Star):
 
         active_pool = self.active_users.get(group_id, {})
         excluded = self._draw_excluded_users()
-        excluded.update([bot_id, user_id, "0"])
+        if not self.config.get("allow_marry_bot", False):
+            excluded.add(bot_id)
+        excluded.update([user_id, "0"])
 
         # 核心逻辑：如果在 aiocqhttp 平台，只从【当前还在群里】的人中抽取
         if current_member_ids:
@@ -465,7 +467,9 @@ class RandomWifePlugin(Star):
             return
 
         force_excluded = self._force_marry_excluded_users()
-        force_excluded.update({bot_id, "0"})
+        if not self.config.get("allow_marry_bot", False):
+            force_excluded.add(bot_id)
+        force_excluded.add("0")
         if target_id in force_excluded:
             yield event.plain_result("该用户在强娶排除列表中，无法被强娶。")
             return

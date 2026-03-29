@@ -427,7 +427,7 @@ class RandomWifePlugin(Star):
         now = time.time()
         
         # 获取上次强娶的时间戳和日期
-        last_time = self.forced_records.setdefault(group_id, {}).get(user_id, 0)
+        last_time = self.forced_records.setdefault(group_id, {}).get(user_id, 946684800.0)
         last_dt = datetime.fromtimestamp(last_time)
         
         # 从配置读取 CD 天数
@@ -438,7 +438,10 @@ class RandomWifePlugin(Star):
         # 比如 2.6 16:00 强娶，CD 3天，重置时间就是 2.6 00:00 + 3天 = 2.9 00:00
         last_midnight = datetime.combine(last_dt.date(), datetime.min.time())
         target_reset_dt = last_midnight + timedelta(days=cd_days)
-        target_reset_ts = target_reset_dt.timestamp()
+        try:
+            target_reset_ts = target_reset_dt.timestamp()
+        except (OSError, OverflowError):
+            target_reset_ts = 0
 
         # 计算距离目标重置时刻还剩多少秒
         remaining = target_reset_ts - now

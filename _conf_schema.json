@@ -97,5 +97,11 @@
         "description": "允许强娶/抽取机器人",
         "hint": "开启后，机器人（Bot）也会进入老婆池，并可以被强娶。默认关闭。",
         "default": false
+    },
+    "at_waifu": {
+        "type": "bool",
+        "description": "是否 @ 抽到的老婆",
+        "hint": "开启后，抽到老婆或强娶时会额外 @ 对方。默认关闭。",
+        "default": false
     }
 }

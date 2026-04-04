@@ -351,29 +351,43 @@ class RandomWifePlugin(Star):
             "\n请好好对待她哦❤️~ \n"
             f"剩余抽取次数：{max(0, daily_limit - today_count - 1)}次"
         )
+        
+        at_waifu_enabled = self.config.get("at_waifu", False)
         if self._can_onebot_withdraw(event):
-            message_id = await self._send_onebot_message(
-                event,
-                message=[
-                    {"type": "at", "data": {"qq": user_id}},
-                    {
-                        "type": "text",
-                        "data": {"text": f" 你的今日老婆是：\n\n【{wife_name}】\n"},
-                    },
-                    {"type": "image", "data": {"file": avatar_url}},
-                    {"type": "text", "data": {"text": suffix_text}},
-                ],
-            )
+            # --- OneBot 路径改动 ---
+            msg_list = [
+                {"type": "at", "data": {"qq": user_id}},
+                {"type": "text", "data": {"text": f" 你的今日老婆是：\n\n【{wife_name}】\n"}},
+            ]
+            
+            # 如果开启了艾特老婆，就把老婆的 at 加进去
+            if at_waifu_enabled:
+                msg_list.append({"type": "at", "data": {"qq": wife_id}})
+                msg_list.append({"type": "text", "data": {"text": " "}}) # 加个空格美化
+
+            msg_list.extend([
+                {"type": "image", "data": {"file": avatar_url}},
+                {"type": "text", "data": {"text": suffix_text}},
+            ])
+
+            message_id = await self._send_onebot_message(event, message=msg_list)
             if message_id is not None:
                 self._schedule_onebot_delete_msg(event.bot, message_id=message_id)
             return
 
+        # --- AstrBot 标准路径改动 ---
         chain = [
             Comp.At(qq=user_id),
             Comp.Plain(f" 你的今日老婆是：\n\n【{wife_name}】\n"),
+        ]
+        
+        if at_waifu_enabled:
+            chain.append(Comp.At(qq=wife_id))
+        
+        chain.extend([
             Comp.Image.fromURL(avatar_url),
             Comp.Plain(suffix_text),
-        ]
+        ])
         yield event.chain_result(chain)
 
     @filter.command("我的老婆", alias={"抽取历史", "wdlp"})

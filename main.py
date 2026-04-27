@@ -21,6 +21,7 @@ from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 from .keyword_trigger import KeywordRoute, KeywordRouter, MatchMode, PermissionLevel
 from .onebot_api import extract_message_id
 from .waifu_relations import maybe_add_other_half_record
+from .src.command.propose import cmd_propose, handle_propose_response
 
 from .src.constants import _DEFAULT_KEYWORD_ROUTES
 from .src.utils import (
@@ -184,10 +185,14 @@ class RandomWifePlugin(Star):
                 
                 # 处理完了，停止事件，防止再触发别的
                 event.stop_event()
-   
+
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def track_active(self, event: AstrMessageEvent):
         self._record_active(event)
+        # 在这里触发求婚回复检查钩子，因为它能捕获所有群内纯文本
+        if not event.is_private_chat():
+            async for result in handle_propose_response(self, event):
+                yield result
 
     def _cleanup_inactive(self, group_id: str):
         return cleanup_inactive(self, group_id)
@@ -835,6 +840,12 @@ class RandomWifePlugin(Star):
         '''
         # 直接调用外部函数，将 self (插件实例) 和 event 传进去
         async for result in run_debug_graph(self, event):
+            yield result
+        
+    @filter.command("求婚")
+    async def propose_command(self, event: AstrMessageEvent):
+        # 调用外部的发起求婚逻辑
+        async for result in cmd_propose(self, event):
             yield result
 
     async def terminate(self):

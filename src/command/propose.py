@@ -34,7 +34,7 @@ async def cmd_propose(plugin_instance, event: AstrMessageEvent):
     target_last_marriage = plugin_instance.forced_records.get(group_id, {}).get(target_id, 0)
 
     if now - user_last_marriage < protection_seconds:
-        yield event.plain_result("你还在新婚保护期内（24小时），暂时不能向别人求婚。")
+        yield event.plain_result("你还在新婚保护期内（24小时），不准花心！。")
         return
     if now - target_last_marriage < protection_seconds:
         yield event.plain_result("对方还在新婚保护期内（24小时），先不要打扰人家啦~")

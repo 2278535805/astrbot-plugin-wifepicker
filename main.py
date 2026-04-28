@@ -842,7 +842,7 @@ class RandomWifePlugin(Star):
         async for result in run_debug_graph(self, event):
             yield result
         
-    @filter.command("求婚")
+    @filter.command("求婚", alias={"qh"})
     async def propose_command(self, event: AstrMessageEvent):
         # 调用外部的发起求婚逻辑
         async for result in cmd_propose(self, event):

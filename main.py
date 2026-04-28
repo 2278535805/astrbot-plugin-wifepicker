@@ -85,6 +85,7 @@ class RandomWifePlugin(Star):
             "show_help": self._cmd_show_help,
             "reset_records": self._cmd_reset_records,
             "reset_force_cd": self._cmd_reset_force_cd,
+            "propose_command": self.propose_command,
         }
         self._keyword_action_to_command_handler = {
             "draw_wife": "draw_wife",
@@ -95,6 +96,7 @@ class RandomWifePlugin(Star):
             "show_help": "show_help",
             "reset_records": "reset_records",
             "reset_force_cd": "reset_force_cd",
+            "propose_command":"propose_command",
         }
         self._keyword_trigger_block_prefixes = ("/", "!", "！")
         logger.info(f"抽老婆插件已加载。数据目录: {self.data_dir}")

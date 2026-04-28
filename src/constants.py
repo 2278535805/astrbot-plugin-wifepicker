@@ -24,4 +24,7 @@ _DEFAULT_KEYWORD_ROUTES: tuple[KeywordRoute, ...] = (
     KeywordRoute(keyword="老婆插件帮助", action="show_help"),
     KeywordRoute(keyword="clpbz", action="show_help"),
 
+    KeywordRoute(keyword="求婚", action="propose_command"),
+    KeywordRoute(keyword="qh", action="propose_command"),
+
 )

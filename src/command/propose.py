@@ -28,16 +28,16 @@ async def cmd_propose(plugin_instance, event: AstrMessageEvent):
 
     # --- 1. 24小时求婚保护检查 ---
     now = time.time()
-    protection_seconds = 24 * 3600 
-    
+    #protection_seconds = 24 * 3600 
+    protection_seconds = 600
     user_last_marriage = plugin_instance.forced_records.get(group_id, {}).get(user_id, 0)
     target_last_marriage = plugin_instance.forced_records.get(group_id, {}).get(target_id, 0)
 
     if now - user_last_marriage < protection_seconds:
-        yield event.plain_result("你还在新婚保护期内（24小时），不准花心！。")
+        yield event.plain_result("你还在新婚保护期内（10分钟），不准花心！。")
         return
     if now - target_last_marriage < protection_seconds:
-        yield event.plain_result("对方还在新婚保护期内（24小时），先不要打扰人家啦~")
+        yield event.plain_result("对方还在新婚保护期内（10分钟），先不要打扰人家啦~")
         return
 
     # --- 2. 解析被求婚者的名称 ---
@@ -124,13 +124,13 @@ async def handle_propose_response(plugin_instance, event: AstrMessageEvent):
             group_records.extend(marriage_data)
 
             now = time.time()
-            cooldown_ts = now + 129600 # 36小时
             
             if group_id not in plugin_instance.forced_records:
                 plugin_instance.forced_records[group_id] = {}
             
-            plugin_instance.forced_records[group_id][user_id] = cooldown_ts
-            plugin_instance.forced_records[group_id][proposer_id] = cooldown_ts
+            # 存入当前时间，直接替换掉旧的记录
+            plugin_instance.forced_records[group_id][user_id] = now
+            plugin_instance.forced_records[group_id][proposer_id] = now
 
             save_json(plugin_instance.records_file, plugin_instance.records)
             save_json(plugin_instance.forced_file, plugin_instance.forced_records)
@@ -138,4 +138,5 @@ async def handle_propose_response(plugin_instance, event: AstrMessageEvent):
             del propose_requests[group_id][user_id]
             
             event.stop_event()
-            yield event.plain_result(f"🎉 恭喜！{target_name} 接受了 {proposer_name} 的求婚！\n你们已正式结为夫妻，36小时内无法强娶他人，24小时内也不会受到他人求婚扰乱。")
+            # 同步修改提示文本为 24 小时
+            yield event.plain_result(f"🎉 恭喜！{target_name} 接受了 {proposer_name} 的求婚！\n你们已正式结为夫妻！")

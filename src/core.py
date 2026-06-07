@@ -1,4 +1,5 @@
 import asyncio
+import heapq
 import time
 import os
 from datetime import datetime, timedelta
@@ -15,6 +16,106 @@ from .utils import (
     is_allowed_group,
     resolve_member_name,
 )
+
+
+ACTIVE_USERS_TRIM_INTERVAL_SECONDS = 3600
+
+
+def count_active_users(active_users: dict) -> int:
+    total = 0
+    for users in active_users.values():
+        if isinstance(users, dict):
+            total += len(users)
+    return total
+
+
+def _get_active_users_trim_limit(plugin) -> int:
+    raw = plugin.config.get("max_records", 500)
+    try:
+        max_total = int(raw)
+    except Exception:
+        max_total = 500
+    return max(0, max_total)
+
+
+def _recount_active_users(plugin) -> int:
+    total = count_active_users(getattr(plugin, "active_users", {}))
+    plugin._active_user_count = total
+    return total
+
+
+def _get_active_users_trim_overflow(plugin, max_total: int) -> int:
+    if max_total <= 0:
+        return 0
+    return max(1, max_total // 20)
+
+
+def _trim_active_users_to_limit(plugin, *, max_total: int | None = None) -> bool:
+    if max_total is None:
+        max_total = _get_active_users_trim_limit(plugin)
+
+    current_total = getattr(plugin, "_active_user_count", None)
+    if not isinstance(current_total, int) or current_total < 0:
+        current_total = _recount_active_users(plugin)
+
+    if current_total <= max_total:
+        return False
+
+    keep_heap: list[tuple[float, str, str]] = []
+    if max_total > 0:
+        for gid, users in plugin.active_users.items():
+            if not isinstance(users, dict):
+                continue
+            for uid, ts in users.items():
+                try:
+                    ts_value = float(ts)
+                except Exception:
+                    ts_value = 0.0
+                entry = (ts_value, str(gid), str(uid))
+                if len(keep_heap) < max_total:
+                    heapq.heappush(keep_heap, entry)
+                elif ts_value > keep_heap[0][0]:
+                    heapq.heapreplace(keep_heap, entry)
+
+    new_active = {}
+    for _, gid, uid in keep_heap:
+        new_active.setdefault(gid, {})[uid] = plugin.active_users[gid][uid]
+
+    plugin.active_users.clear()
+    plugin.active_users.update(new_active)
+    plugin._active_user_count = len(keep_heap)
+    return True
+
+
+def save_active_users(plugin, *, force_trim: bool = False) -> None:
+    now = time.time()
+    max_total = _get_active_users_trim_limit(plugin)
+    current_total = getattr(plugin, "_active_user_count", None)
+    if not isinstance(current_total, int) or current_total < 0:
+        current_total = _recount_active_users(plugin)
+
+    if current_total > max_total:
+        last_trim_at = float(getattr(plugin, "_active_users_last_trim_at", 0.0) or 0.0)
+        trim_interval = getattr(
+            plugin,
+            "_active_users_trim_interval_seconds",
+            ACTIVE_USERS_TRIM_INTERVAL_SECONDS,
+        )
+        overflow_limit = _get_active_users_trim_overflow(plugin, max_total)
+        try:
+            trim_interval = max(0, int(trim_interval))
+        except Exception:
+            trim_interval = ACTIVE_USERS_TRIM_INTERVAL_SECONDS
+
+        if (
+            force_trim
+            or current_total - max_total >= overflow_limit
+            or now - last_trim_at >= trim_interval
+        ):
+            _trim_active_users_to_limit(plugin, max_total=max_total)
+            plugin._active_users_last_trim_at = now
+
+    save_json(plugin.active_file, plugin.active_users)
 
 
 async def send_onebot_message(plugin, event, *, message: list[dict]) -> object:
@@ -67,11 +168,23 @@ def record_active(plugin, event) -> None:
         return
 
     group_key = str(group_id)
-    if group_key not in plugin.active_users:
+    if group_key not in plugin.active_users or not isinstance(
+        plugin.active_users.get(group_key), dict
+    ):
         plugin.active_users[group_key] = {}
-    plugin.active_users[group_key][user_id] = time.time()
-    # preserve original save_json call as-is
-    save_json(plugin.active_file, plugin.active_users, plugin.records_file, plugin.config)
+
+    active_group = plugin.active_users[group_key]
+    is_new_user = user_id not in active_group
+    active_group[user_id] = time.time()
+
+    if is_new_user:
+        current_total = getattr(plugin, "_active_user_count", None)
+        if isinstance(current_total, int) and current_total >= 0:
+            plugin._active_user_count = current_total + 1
+        else:
+            plugin._active_user_count = count_active_users(plugin.active_users)
+
+    save_active_users(plugin)
 
 
 def clean_rbq_stats(plugin) -> None:
@@ -278,5 +391,16 @@ def cleanup_inactive(plugin, group_id: str):
     active_group = plugin.active_users[group_id]
     new_active = {uid: ts for uid, ts in active_group.items() if (now - ts < limit) and uid != "0"}
     if len(active_group) != len(new_active):
-        plugin.active_users[group_id] = new_active
-        save_json(plugin.active_file, plugin.active_users)
+        removed_count = len(active_group) - len(new_active)
+        if new_active:
+            plugin.active_users[group_id] = new_active
+        else:
+            plugin.active_users.pop(group_id, None)
+
+        current_total = getattr(plugin, "_active_user_count", None)
+        if isinstance(current_total, int) and current_total >= 0:
+            plugin._active_user_count = max(0, current_total - removed_count)
+        else:
+            plugin._active_user_count = count_active_users(plugin.active_users)
+
+        save_active_users(plugin)

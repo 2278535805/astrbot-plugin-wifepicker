@@ -37,6 +37,8 @@ from .src.utils import (
 from .src.debug_utils import run_debug_graph
 # 新增：导入 core helpers
 from .src.core import (
+    ACTIVE_USERS_TRIM_INTERVAL_SECONDS,
+    count_active_users,
     send_onebot_message,
     schedule_onebot_delete_msg,
     record_active,
@@ -52,6 +54,7 @@ from .src.core import (
     auto_withdraw_delay_seconds,
     can_onebot_withdraw,
     cleanup_inactive,
+    save_active_users,
 )
 
 
@@ -95,6 +98,9 @@ class RandomWifePlugin(Star):
         self.forced_records = load_json(self.forced_file, {})
         self.marriage_action_records = load_json(self.marriage_action_file, {})
         self.rbq_stats = load_json(self.rbq_stats_file, {})
+        self._active_user_count = count_active_users(self.active_users)
+        self._active_users_last_trim_at = 0.0
+        self._active_users_trim_interval_seconds = ACTIVE_USERS_TRIM_INTERVAL_SECONDS
 
         self._keyword_router = KeywordRouter(routes=_DEFAULT_KEYWORD_ROUTES)
         self._keyword_handlers = {
@@ -233,7 +239,7 @@ class RandomWifePlugin(Star):
             return
 
         group_id = str(event.get_group_id())
-        save_json(self.active_file, self.active_users, self.active_file, self.config)
+        save_active_users(self, force_trim=True)
         if not is_allowed_group(group_id, self.config):
             return
 
@@ -329,7 +335,10 @@ class RandomWifePlugin(Star):
             if removed_uids:
                 for r_uid in removed_uids:
                     del self.active_users[group_id][r_uid]
-                save_json(self.active_file, self.active_users)
+                self._active_user_count = max(
+                    0, self._active_user_count - len(removed_uids)
+                )
+                save_active_users(self)
         else:
             pool = [uid for uid in active_pool.keys() if uid not in excluded]
 
@@ -751,7 +760,7 @@ class RandomWifePlugin(Star):
 
     async def terminate(self):
         save_json(self.records_file, self.records)
-        save_json(self.active_file, self.active_users)
+        save_active_users(self, force_trim=True)
         save_json(self.forced_file, self.forced_records)
         save_json(self.marriage_action_file, self.marriage_action_records)
         save_json(self.rbq_stats_file, self.rbq_stats)

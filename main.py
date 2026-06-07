@@ -4,8 +4,7 @@ import os
 import random
 import re
 import time
-#from datetime import datetime
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
@@ -44,12 +43,30 @@ from .src.core import (
     force_marry_excluded_users,
     ensure_today_records,
     get_group_records,
+    get_force_marry_cooldown_status,
+    get_propose_cooldown_status,
     auto_set_other_half_enabled,
     auto_withdraw_enabled,
     auto_withdraw_delay_seconds,
     can_onebot_withdraw,
     cleanup_inactive,
 )
+
+
+def _format_remaining_seconds(seconds: float) -> str:
+    total_seconds = max(0, int(seconds))
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    mins = (total_seconds % 3600) // 60
+
+    if days > 0:
+        return f"{days}天{hours}小时{mins}分"
+    if hours > 0:
+        return f"{hours}小时{mins}分"
+    if mins > 0:
+        secs = total_seconds % 60
+        return f"{mins}分{secs}秒"
+    return f"{total_seconds}秒"
 
 class RandomWifePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -65,6 +82,7 @@ class RandomWifePlugin(Star):
         self.records_file = os.path.join(self.data_dir, "wife_records.json")
         self.active_file = os.path.join(self.data_dir, "active_users.json") 
         self.forced_file = os.path.join(self.data_dir, "forced_marriage.json")
+        self.marriage_action_file = os.path.join(self.data_dir, "marriage_action_today.json")
         self.rbq_stats_file = os.path.join(self.data_dir, "rbq_stats.json")
         
         if not os.path.exists(self.data_dir):
@@ -73,6 +91,7 @@ class RandomWifePlugin(Star):
         self.records = load_json(self.records_file, {"date": "", "groups": {}})
         self.active_users = load_json(self.active_file, {})
         self.forced_records = load_json(self.forced_file, {})
+        self.marriage_action_records = load_json(self.marriage_action_file, {})
         self.rbq_stats = load_json(self.rbq_stats_file, {})
 
         self._keyword_router = KeywordRouter(routes=_DEFAULT_KEYWORD_ROUTES)
@@ -446,37 +465,19 @@ class RandomWifePlugin(Star):
             return
 
         now = time.time()
-        
-        # 获取上次强娶的时间戳和日期
-        last_time = self.forced_records.setdefault(group_id, {}).get(user_id, 946684800.0)
-        last_dt = datetime.fromtimestamp(last_time)
-        
-        # 从配置读取 CD 天数
-        cd_days = self.config.get("force_marry_cd", 3)
+        user_propose_cd = get_propose_cooldown_status(self, group_id, user_id)
+        if user_propose_cd:
+            remaining_text = _format_remaining_seconds(user_propose_cd["remaining"])
+            yield event.plain_result(f"你还在求婚冷却期内，请等待 {remaining_text} 后再强娶。")
+            return
 
-        # --- 核心逻辑：计算目标重置日期 ---
-        # 逻辑是：取上次强娶那一天的 00:00，加上 cd_days 天。
-        # 比如 2.6 16:00 强娶，CD 3天，重置时间就是 2.6 00:00 + 3天 = 2.9 00:00
-        last_midnight = datetime.combine(last_dt.date(), datetime.min.time())
-        target_reset_dt = last_midnight + timedelta(days=cd_days)
-        try:
-            target_reset_ts = target_reset_dt.timestamp()
-        except (OSError, OverflowError):
-            target_reset_ts = 0
-
-        # 计算距离目标重置时刻还剩多少秒
-        remaining = target_reset_ts - now
-
-        if remaining > 0:
-            # 这里的计算会非常符合直觉：
-            # 只要没到那天的 00:00，就会显示剩余的天/时/分
-            days = int(remaining // 86400)
-            hours = int((remaining % 86400) // 3600)
-            mins = int((remaining % 3600) // 60)
-            
+        user_force_cd = get_force_marry_cooldown_status(self, group_id, user_id)
+        if user_force_cd:
+            remaining_text = _format_remaining_seconds(user_force_cd["remaining"])
+            reset_text = user_force_cd["reset_dt"].strftime("%m-%d %H:%M")
             yield event.plain_result(
-                f"你已经强娶过啦！\n请等待：{days}天{hours}小时{mins}分后再试。\n"
-                f"(重置时间：{target_reset_dt.strftime('%m-%d %H:%M')})"
+                f"你已经强娶过啦！\n请等待：{remaining_text}后再试。\n"
+                f"(重置时间：{reset_text})"
             )
             return
 
@@ -488,6 +489,14 @@ class RandomWifePlugin(Star):
 
         if target_id == user_id:
             yield event.plain_result("不能娶自己！")
+            return
+
+        target_propose_cd = get_propose_cooldown_status(self, group_id, target_id)
+        if target_propose_cd:
+            remaining_text = _format_remaining_seconds(target_propose_cd["remaining"])
+            yield event.plain_result(
+                f"对方还在求婚冷却期内，请等待 {remaining_text} 后再强娶。"
+            )
             return
 
         force_excluded = self._force_marry_excluded_users()
@@ -620,8 +629,8 @@ class RandomWifePlugin(Star):
         with open(template_path, "r", encoding="utf-8") as f:
             graph_html = f.read()
 
-        # 2. 获取数据 (假设你已经从 self.records 获取了 group_data)
-        group_data = self.records.get("groups", {}).get(group_id, {}).get("records", [])
+        # 2. 获取当前群的今日关系记录
+        group_data = self._get_group_records(group_id)
 
         group_name = "未命名群聊"
         user_map = {}
@@ -854,6 +863,7 @@ class RandomWifePlugin(Star):
         save_json(self.records_file, self.records)
         save_json(self.active_file, self.active_users)
         save_json(self.forced_file, self.forced_records)
+        save_json(self.marriage_action_file, self.marriage_action_records)
         save_json(self.rbq_stats_file, self.rbq_stats)
 
         # 取消尚未执行的撤回任务，避免插件卸载后仍调用协议端。

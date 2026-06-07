@@ -146,6 +146,110 @@ def get_group_records(plugin, group_id: str) -> list:
     return plugin.records["groups"][group_id]["records"]
 
 
+PROPOSE_COOLDOWN_SECONDS = 3600
+
+
+def _get_marriage_action_group(plugin, group_id: str) -> dict:
+    group_records = plugin.marriage_action_records.get(group_id)
+    if not isinstance(group_records, dict):
+        group_records = {}
+        plugin.marriage_action_records[group_id] = group_records
+    return group_records
+
+
+def _remove_marriage_action_record(plugin, group_id: str, user_id: str) -> None:
+    group_records = plugin.marriage_action_records.get(group_id)
+    if not isinstance(group_records, dict):
+        return
+
+    group_records.pop(user_id, None)
+    if not group_records:
+        plugin.marriage_action_records.pop(group_id, None)
+
+
+def get_propose_cooldown_status(plugin, group_id: str, user_id: str) -> dict | None:
+    record = plugin.marriage_action_records.get(group_id, {}).get(user_id)
+    if not isinstance(record, dict):
+        return None
+
+    action = record.get("action")
+    expire_at = record.get("expire_at")
+    if action != "propose" or not isinstance(expire_at, (int, float)):
+        _remove_marriage_action_record(plugin, group_id, user_id)
+        return None
+
+    remaining = expire_at - time.time()
+    if remaining <= 0:
+        _remove_marriage_action_record(plugin, group_id, user_id)
+        return None
+
+    return {
+        "action": "propose",
+        "start_at": record.get("start_at"),
+        "expire_at": expire_at,
+        "remaining": remaining,
+        "role": record.get("role"),
+        "related_user_id": record.get("related_user_id"),
+    }
+
+
+def set_propose_cooldown(
+    plugin,
+    group_id: str,
+    user_id: str,
+    *,
+    related_user_id: str,
+    role: str,
+    now: float | None = None,
+) -> None:
+    start_at = time.time() if now is None else now
+    group_records = _get_marriage_action_group(plugin, group_id)
+    group_records[user_id] = {
+        "action": "propose",
+        "start_at": start_at,
+        "expire_at": start_at + PROPOSE_COOLDOWN_SECONDS,
+        "related_user_id": related_user_id,
+        "role": role,
+    }
+
+
+def get_force_marry_cd_days(plugin) -> int:
+    raw = plugin.config.get("force_marry_cd", 3)
+    try:
+        cd_days = int(raw)
+    except Exception:
+        cd_days = 3
+    return max(0, cd_days)
+
+
+def get_force_marry_cooldown_status(plugin, group_id: str, user_id: str) -> dict | None:
+    last_time = plugin.forced_records.setdefault(group_id, {}).get(user_id)
+    if not isinstance(last_time, (int, float)):
+        return None
+
+    last_dt = datetime.fromtimestamp(last_time)
+    cd_days = get_force_marry_cd_days(plugin)
+    last_midnight = datetime.combine(last_dt.date(), datetime.min.time())
+    reset_dt = last_midnight + timedelta(days=cd_days)
+    try:
+        reset_ts = reset_dt.timestamp()
+    except (OSError, OverflowError):
+        reset_ts = 0
+
+    remaining = reset_ts - time.time()
+    if remaining <= 0:
+        return None
+
+    return {
+        "action": "force_marry",
+        "last_time": last_time,
+        "reset_at": reset_ts,
+        "reset_dt": reset_dt,
+        "remaining": remaining,
+        "cd_days": cd_days,
+    }
+
+
 def auto_set_other_half_enabled(plugin) -> bool:
     return bool(plugin.config.get("auto_set_other_half", False))
 

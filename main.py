@@ -20,7 +20,9 @@ from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 from .keyword_trigger import KeywordRoute, KeywordRouter, MatchMode, PermissionLevel
 from .onebot_api import extract_message_id
 from .waifu_relations import maybe_add_other_half_record
+from .src.command.help import cmd_show_help
 from .src.command.propose import cmd_propose, handle_propose_response
+from .src.command.relationdiagram import cmd_show_graph
 
 from .src.constants import _DEFAULT_KEYWORD_ROUTES
 from .src.utils import (
@@ -600,109 +602,12 @@ class RandomWifePlugin(Star):
 
     @filter.command("关系图", alias={"gxt"})
     async def show_graph(self, event: AstrMessageEvent):
-        async for result in self._cmd_show_graph(event):
+        async for result in cmd_show_graph(self, event):
             yield result
 
     async def _cmd_show_graph(self, event: AstrMessageEvent):
-        group_id = str(event.get_group_id())
-        if not is_allowed_group(group_id, self.config):
-            return
-
-        iter_count = self.config.get("iterations", 140)
-
-        # --- 新增：读取 JS 文件内容 ---
-        vis_js_path = os.path.join(self.curr_dir, "vis-network.min.js")
-        vis_js_content = ""
-        if os.path.exists(vis_js_path):
-            with open(vis_js_path, "r", encoding="utf-8") as f:
-                vis_js_content = f.read()
-        else:
-            logger.error(f"找不到 JS 文件: {vis_js_path}")
-        # ---------------------------
-
-        # 1. 读取模板文件内容
-        template_path = os.path.join(self.curr_dir, "graph_template.html")
-        if not os.path.exists(template_path):
-            yield event.plain_result(f"错误：找不到模板文件 {template_path}")
-            return
-
-        with open(template_path, "r", encoding="utf-8") as f:
-            graph_html = f.read()
-
-        # 2. 获取当前群的今日关系记录
-        group_data = self._get_group_records(group_id)
-
-        group_name = "未命名群聊"
-        user_map = {}
-        try:
-            if event.get_platform_name() == "aiocqhttp":
-                # 获取群信息
-                info = await event.bot.api.call_action(
-                    "get_group_info", group_id=int(group_id)
-                )
-                if isinstance(info, dict) and "data" in info and isinstance(info["data"], dict):
-                    info = info["data"]
-                group_name = info.get("group_name", "未命名群聊")
-
-                # 获取群成员列表构建映射
-                members = await event.bot.api.call_action(
-                    "get_group_member_list", group_id=int(group_id)
-                )
-                if isinstance(members, dict) and "data" in members and isinstance(members["data"], list):
-                    members = members["data"]
-
-                if isinstance(members, list):
-                    for m in members:
-                        uid = str(m.get("user_id"))
-                        name = m.get("card") or m.get("nickname") or uid
-                        user_map[uid] = name
-
-        except Exception as e:
-            logger.warning(f"获取群信息失败: {e}")
-
-        # 3. 渲染图片
-        # 根据节点数量动态计算高度，避免拥挤
-        # 动态计算你想要裁剪的区域大小
-        unique_nodes = set()
-        for r in group_data:
-            unique_nodes.add(str(r.get("user_id")))
-            unique_nodes.add(str(r.get("wife_id")))
-        node_count = len(unique_nodes)
-
-        # 假设我们想要从左上角 (0,0) 开始，裁剪一个动态高度的区域
-        clip_width = 1920
-        clip_height = 1080 + (max(0, node_count - 10) * 60)
-
-        try:
-            url = await self.html_render(
-                graph_html,
-                {
-                    "vis_js_content": vis_js_content,
-                    "group_id": group_id,
-                    "group_name": group_name,
-                    "user_map": user_map,
-                    "records": group_data,
-                    "iterations": iter_count,
-                },
-                options={
-                    "type": "png",
-                    "quality": None,
-                    "scale": "device",
-                    # 必须传齐这四个参数，且必须是 int 或 float，不能是字符串
-                    "clip": {
-                        "x": 0,
-                        "y": 0,
-                        "width": clip_width,
-                        "height": clip_height,
-                    },
-                    # 注意：使用 clip 时通常建议将 full_page 设为 False
-                    "full_page": False,
-                    "device_scale_factor_level": "ultra",
-                },
-            )
-            yield event.image_result(url)
-        except Exception as e:
-            logger.error(f"渲染失败: {e}")
+        async for result in cmd_show_graph(self, event):
+            yield result
 
     @filter.command("rbq排行", alias={"rbqph"})
     async def rbq_ranking(self, event: AstrMessageEvent):
@@ -822,27 +727,12 @@ class RandomWifePlugin(Star):
 
     @filter.command("抽老婆帮助", alias={"老婆插件帮助", "clpbz"})
     async def show_help(self, event: AstrMessageEvent):
-        async for result in self._cmd_show_help(event):
+        async for result in cmd_show_help(self, event):
             yield result
 
     async def _cmd_show_help(self, event: AstrMessageEvent):
-        if not is_allowed_group(str(event.get_group_id()), self.config):
-            return
-        daily_limit = self.config.get("daily_limit", 3)
-        help_text = (
-            "===== 🌸 抽老婆帮助 =====\n"
-            "1. 【抽老婆】：随机抽取今日老婆\n"
-            "2. 【强娶@某人】或【强娶 @某人】：强行更换今日老婆（有冷却期）\n"
-            "3. 【我的老婆】：查看今日历史与次数\n"
-            "4. 【重置记录】：(管理员) 清空数据（强娶记录不会清除）\n"
-            "5. 【关系图】：查看群友老婆的关系\n"
-            "6. 【rbq排行】：展示近30天被强娶的次数排行\n"
-            f"当前每日上限：{daily_limit}次\n"
-            "提示：可在配置开启“关键词触发”，直接发送关键词无需 / 前缀。\n"
-            "提示：可在配置开启“自动设置对方老婆 / 定时自动撤回”。\n"
-            "注：仅限30天内发言且当前在群的活跃群友。"
-        )
-        yield event.plain_result(help_text)
+        async for result in cmd_show_help(self, event):
+            yield result
 
     @filter.command("debug_graph")
     async def debug_graph(self, event: AstrMessageEvent):

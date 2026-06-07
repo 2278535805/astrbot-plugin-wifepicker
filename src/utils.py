@@ -32,18 +32,65 @@ def normalize_user_id_set(values: object) -> set[str]:
 
 
 def extract_target_id_from_message(event: AstrMessageEvent) -> str | None:
-    for component in event.message_obj.message:
+    self_id = str(event.get_self_id() or "")
+    mentions: list[str] = []
+
+    for component in getattr(event.message_obj, "message", []):
         if isinstance(component, Comp.At):
-            return str(component.qq)
+            qq = str(component.qq)
+            if qq:
+                mentions.append(qq)
+
+    if mentions:
+        for qq in mentions:
+            if qq != self_id:
+                if len(mentions) > 1 or mentions[0] == self_id:
+                    logger.info(
+                        f"[wifepicker] mention target resolved: mentions={mentions}, "
+                        f"self_id={self_id}, selected={qq}"
+                    )
+                return qq
+
+        logger.info(
+            f"[wifepicker] mention target resolved to bot/self only: "
+            f"mentions={mentions}, self_id={self_id}"
+        )
+        return mentions[0]
 
     raw_text = str(getattr(event, "message_str", "") or "")
-    cq_at = re.search(r"\[CQ:at,qq=(\d+)\]", raw_text)
-    if cq_at:
-        return cq_at.group(1)
+    cq_mentions = re.findall(r"\[CQ:at,qq=(\d+)\]", raw_text)
+    if cq_mentions:
+        for qq in cq_mentions:
+            if qq != self_id:
+                if len(cq_mentions) > 1 or cq_mentions[0] == self_id:
+                    logger.info(
+                        f"[wifepicker] cq target resolved: mentions={cq_mentions}, "
+                        f"self_id={self_id}, selected={qq}"
+                    )
+                return qq
 
-    plain_at = re.search(r"@(\d{5,12})", raw_text)
-    if plain_at:
-        return plain_at.group(1)
+        logger.info(
+            f"[wifepicker] cq target resolved to bot/self only: "
+            f"mentions={cq_mentions}, self_id={self_id}"
+        )
+        return cq_mentions[0]
+
+    plain_mentions = re.findall(r"@(\d{5,12})", raw_text)
+    if plain_mentions:
+        for qq in plain_mentions:
+            if qq != self_id:
+                if len(plain_mentions) > 1 or plain_mentions[0] == self_id:
+                    logger.info(
+                        f"[wifepicker] plain target resolved: mentions={plain_mentions}, "
+                        f"self_id={self_id}, selected={qq}"
+                    )
+                return qq
+
+        logger.info(
+            f"[wifepicker] plain target resolved to bot/self only: "
+            f"mentions={plain_mentions}, self_id={self_id}"
+        )
+        return plain_mentions[0]
 
     return None
 

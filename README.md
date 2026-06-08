@@ -67,6 +67,6 @@
 | `whitelist_groups` | list | [] | 白名单群号列表 |
 | `blacklist_groups` | list | [] | 黑名单群号列表 |
 
-*也可以去看看[Nayukiiii](https://github.com/Nayukiiii)对这个插件的功能做出的一些其他有意思的改进[astrbot-plugin-wifepicker-edit](https://github.com/Nayukiiii/astrbot-plugin-wifepicker-edit)
+*也可以去看看[Nayukiiii](https://github.com/Nayukiiii)对这个插件的功能做出的一些有意思的改进[astrbot-plugin-wifepicker-edit](https://github.com/Nayukiiii/astrbot-plugin-wifepicker-edit)
 
 觉得插件好用的话，就给个 star 吧 ❤️~

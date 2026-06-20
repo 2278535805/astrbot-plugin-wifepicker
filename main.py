@@ -21,8 +21,10 @@ from .keyword_trigger import KeywordRoute, KeywordRouter, MatchMode, PermissionL
 from .onebot_api import extract_message_id
 from .waifu_relations import maybe_add_other_half_record
 from .src.command.help import cmd_show_help
+from .src.command.my_wife import cmd_show_history
 from .src.command.propose import cmd_propose, handle_propose_response
 from .src.command.relationdiagram import cmd_show_graph
+from .src.command.rbqrank import cmd_rbq_ranking
 from .src.command.reset_propose_cd import cmd_reset_propose_cd
 
 from .src.constants import _DEFAULT_KEYWORD_ROUTES
@@ -484,29 +486,8 @@ class RandomWifePlugin(Star):
             yield result
 
     async def _cmd_show_history(self, event: AstrMessageEvent):
-        group_id = str(event.get_group_id())
-        if not is_allowed_group(group_id, self.config):
-            return
-
-        user_id = str(event.get_sender_id())
-        today = datetime.now().strftime("%Y-%m-%d")
-        if self.records.get("date") != today:
-            yield event.plain_result("你今天还没有抽过老婆哦~")
-            return
-
-        group_recs = self.records.get("groups", {}).get(group_id, {}).get("records", [])
-        user_recs = [r for r in group_recs if r["user_id"] == user_id]
-        if not user_recs:
-            yield event.plain_result("你今天还没有抽过老婆哦~")
-            return
-
-        daily_limit = self.config.get("daily_limit", 3)
-        res = [f"🌸 你今日的老婆记录 ({len(user_recs)}/{daily_limit})："]
-        for i, r in enumerate(user_recs, 1):
-            time_str = datetime.fromisoformat(r["timestamp"]).strftime("%H:%M")
-            res.append(f"{i}. 【{r['wife_name']}】 ({time_str})")
-        res.append(f"\n剩余次数：{max(0, daily_limit - len(user_recs))}次")
-        yield event.plain_result("\n".join(res))
+        async for result in cmd_show_history(self, event):
+            yield result
 
     @filter.command("强娶", alias={"qiangqu"})
     async def force_marry(self, event: AstrMessageEvent):
@@ -677,90 +658,8 @@ class RandomWifePlugin(Star):
 
     @filter.command("rbq排行", alias={"rbqph"})
     async def rbq_ranking(self, event: AstrMessageEvent):
-        if event.is_private_chat():
-            yield event.plain_result("私聊看不了榜单哦~")
-            return
-            
-        group_id = str(event.get_group_id())
-        self._clean_rbq_stats() # 渲染前强制清理一次过期数据
-        
-        group_data = self.rbq_stats.get(group_id, {})
-        if not group_data:
-            yield event.plain_result("本群近30天还没有人被强娶过，大家都很有礼貌呢。")
-            return
-
-        # 获取群成员名字映射 (仿照关系图逻辑)
-        user_map = {}
-        try:
-            if event.get_platform_name() == "aiocqhttp":
-                members = await event.bot.api.call_action('get_group_member_list', group_id=int(group_id))
-                for m in members:
-                    uid = str(m.get("user_id"))
-                    user_map[uid] = m.get("card") or m.get("nickname") or uid
-        except Exception:
-            pass
-
-        # 构造排序数据
-        sorted_list = []
-        for uid, ts_list in group_data.items():
-            sorted_list.append({
-                "uid": uid,
-                "name": user_map.get(uid, f"用户({uid})"),
-                "count": len(ts_list)
-            })
-        
-        # 按次数从大到小排，取前10
-        sorted_list.sort(key=lambda x: x["count"], reverse=True)
-        top_10 = sorted_list[:10]
-
-        current_rank = 1
-        for i, user in enumerate(top_10):
-            if i > 0 and user["count"] < top_10[i-1]["count"]:
-                current_rank = i + 1  # 排名跳跃到当前位置
-            user["rank"] = current_rank
-
-        # 读取新模板
-        template_path = os.path.join(self.curr_dir, "template", "rbq_ranking.html")
-        if not os.path.exists(template_path):
-            yield event.plain_result("错误：找不到排行模板 rbq_ranking.html")
-            return
-            
-        with open(template_path, "r", encoding="utf-8") as f:
-            template_content = f.read()
-
-        try:
-            # 计算数据行数，动态调整高度（10人大约550px就够了）
-            #dynamic_height = 160 + (len(top_10) * 85) 
-            
-            header_h = 100 
-            item_h = 60 
-            footer_h = 50
-            rank_width = 400
-
-            dynamic_height = header_h + (len(top_10) * item_h) + footer_h
-            # 渲染图片
-            url = await self.html_render(template_content, {
-                "group_id": group_id,
-                "ranking": top_10,
-                "title": "❤️ 群rbq月榜 ❤️"
-            }, 
-            options={
-                "type": "png",
-                "quality": None,
-                "full_page": False, # 关闭全页面，配合 clip 使用
-                "clip": {
-                    "x": 0,
-                    "y": 0,
-                    "width": rank_width,
-                    "height": dynamic_height # 裁切的高度
-                },
-                "scale": "device",
-                "device_scale_factor_level": "ultra"
-            }
-            )
-            yield event.image_result(url)
-        except Exception as e:
-            logger.error(f"渲染RBQ排行失败: {e}")
+        async for result in cmd_rbq_ranking(self, event):
+            yield result
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("重置记录", alias={"czjl"})

@@ -3,6 +3,8 @@ import os
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
+from ..core import clean_rbq_stats
+
 
 async def cmd_rbq_ranking(plugin_instance, event: AstrMessageEvent):
     if event.is_private_chat():
@@ -10,7 +12,7 @@ async def cmd_rbq_ranking(plugin_instance, event: AstrMessageEvent):
         return
 
     group_id = str(event.get_group_id())
-    plugin_instance._clean_rbq_stats()
+    clean_rbq_stats(plugin_instance)
 
     group_data = plugin_instance.rbq_stats.get(group_id, {})
     if not group_data:

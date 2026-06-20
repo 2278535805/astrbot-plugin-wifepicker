@@ -3,6 +3,7 @@ import os
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
+from ..core import get_group_records
 from ..utils import is_allowed_group
 
 
@@ -35,7 +36,7 @@ async def cmd_show_graph(plugin_instance, event: AstrMessageEvent):
         graph_html = f.read()
 
     # 2. 获取当前群的今日关系记录
-    group_data = plugin_instance._get_group_records(group_id)
+    group_data = get_group_records(plugin_instance, group_id)
 
     group_name = "未命名群聊"
     user_map = {}

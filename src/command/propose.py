@@ -10,6 +10,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 
 from ..core import (
     get_force_marry_cooldown_status,
+    get_group_records,
     get_propose_cooldown_status,
     set_propose_cooldown,
 )
@@ -289,7 +290,7 @@ async def handle_propose_response(plugin_instance, event: AstrMessageEvent):
                 return
 
             timestamp = datetime.now().isoformat()
-            group_records = plugin_instance._get_group_records(group_id)
+            group_records = get_group_records(plugin_instance, group_id)
             group_records[:] = [
                 r
                 for r in group_records

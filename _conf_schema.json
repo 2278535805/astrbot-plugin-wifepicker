@@ -2,7 +2,7 @@
     "daily_limit": {
         "type": "int",
         "description": "每日抽取上限",
-        "hint": "每位用户每天可以抽取老婆的次数上限。",
+        "hint": "每位用户每天可以抽取老婆的次数上限，最好设置为一次，后面很多功能都是基于上限为一开发的，多次可能会出现一些兼容性问题。",
         "default": 1
     },
     "force_marry_cd": {
@@ -16,6 +16,23 @@
         "description": "活跃群友记录上限",
         "hint": "跨群累计活跃用户总记录条数，作为抽老婆的候选池。达到此数值后将自动清理最沉默的群友。如果你加的群很多，而且都比较活跃，请调高此数值。",
         "default": 500
+    },
+    "active_user_days": {
+        "type": "int",
+        "description": "活跃筛选天数",
+        "hint": "仅保留最近多少天内发过言的群友作为抽老婆候选，超过该天数未发言的人会在抽取前从活跃池删除。可设置 1 到 30 天。",
+        "default": 30,
+        "slider": {
+            "min": 1,
+            "max": 30,
+            "step": 1
+        }
+    },
+    "debug_enabled": {
+        "type": "bool",
+        "description": "全局调试日志",
+        "hint": "开启后会输出抽取流程、候选池、群成员过滤、活跃池清理等调试日志。排查完成后建议关闭。",
+        "default": false
     },
     "excluded_users": {
         "type": "list",

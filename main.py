@@ -34,6 +34,7 @@ from .src.utils import (
     resolve_member_name,        # 新增
 )
 
+from .src.debug import debug_log
 from .src.debug_utils import run_debug_graph
 # 新增：导入 core helpers
 from .src.core import (
@@ -49,6 +50,7 @@ from .src.core import (
     get_group_records,
     get_force_marry_cooldown_status,
     get_propose_cooldown_status,
+    get_active_user_days,
     auto_set_other_half_enabled,
     auto_withdraw_enabled,
     auto_withdraw_delay_seconds,
@@ -127,6 +129,12 @@ class RandomWifePlugin(Star):
         }
         self._keyword_trigger_block_prefixes = ("/", "!", "！")
         logger.info(f"抽老婆插件已加载。数据目录: {self.data_dir}")
+        debug_log(
+            self,
+            "debug",
+            f"debug enabled active_days={self.config.get('active_user_days', 30)} "
+            f"active_file={self.active_file}",
+        )
 
     def _get_keyword_trigger_mode(self) -> MatchMode:
         """从配置中获取匹配模式，默认为包含匹配"""
@@ -226,6 +234,9 @@ class RandomWifePlugin(Star):
     def _cleanup_inactive(self, group_id: str):
         return cleanup_inactive(self, group_id)
 
+    def _get_active_user_days(self) -> int:
+        return get_active_user_days(self)
+
     @filter.command("今日老婆", alias={"抽老婆", "jrlp"})
     async def draw_wife(self, event: AstrMessageEvent):
         async for result in self._cmd_draw_wife(event):
@@ -239,8 +250,15 @@ class RandomWifePlugin(Star):
             return
 
         group_id = str(event.get_group_id())
+        debug_log(
+            self,
+            "draw",
+            f"start group={group_id} user={event.get_sender_id()} "
+            f"platform={event.get_platform_name()} active_days={self._get_active_user_days()}",
+        )
         save_active_users(self, force_trim=True)
         if not is_allowed_group(group_id, self.config):
+            debug_log(self, "draw", f"skip disallowed group={group_id}")
             return
 
         user_id, bot_id = str(event.get_sender_id()), str(event.get_self_id())
@@ -250,8 +268,14 @@ class RandomWifePlugin(Star):
         group_records = self._get_group_records(group_id)
         user_recs = [r for r in group_records if r["user_id"] == user_id]
         today_count = len(user_recs)
+        debug_log(
+            self,
+            "draw",
+            f"daily group={group_id} user={user_id} today_count={today_count} limit={daily_limit}",
+        )
 
         if today_count >= daily_limit:
+            debug_log(self, "draw", f"hit daily limit group={group_id} user={user_id}")
             if daily_limit == 1:
                 wife_record = user_recs[0]
                 wife_name, wife_id = wife_record["wife_name"], wife_record["wife_id"]
@@ -311,8 +335,14 @@ class RandomWifePlugin(Star):
                 ):
                     members = members["data"]
                 current_member_ids = [str(m.get("user_id")) for m in members]
+                debug_log(
+                    self,
+                    "draw",
+                    f"member_list group={group_id} members={len(current_member_ids)}",
+                )
         except Exception as e:
             logger.error(f"获取群成员列表失败，将使用缓存池: {e}")
+            debug_log(self, "draw", f"member_list failed group={group_id} error={e}")
 
         active_pool = self.active_users.get(group_id, {})
         excluded = self._draw_excluded_users()
@@ -338,12 +368,23 @@ class RandomWifePlugin(Star):
                 self._active_user_count = max(
                     0, self._active_user_count - len(removed_uids)
                 )
+                debug_log(
+                    self,
+                    "draw",
+                    f"removed_left_group group={group_id} count={len(removed_uids)}",
+                )
                 save_active_users(self)
         else:
             pool = [uid for uid in active_pool.keys() if uid not in excluded]
 
+        debug_log(
+            self,
+            "draw",
+            f"pool group={group_id} active_pool={len(active_pool)} "
+            f"excluded={len(excluded)} candidates={len(pool)}",
+        )
         if not pool:
-            yield event.plain_result("老婆池为空（需有人在30天内发言）。")
+            yield event.plain_result(f"老婆池为空（需有人在{self._get_active_user_days()}天内发言）。")
             return
 
         wife_id = random.choice(pool)
@@ -362,6 +403,7 @@ class RandomWifePlugin(Star):
             pass
 
         timestamp = datetime.now().isoformat()
+        debug_log(self, "draw", f"selected group={group_id} user={user_id} wife={wife_id}")
         group_records.append(
             {
                 "user_id": user_id,

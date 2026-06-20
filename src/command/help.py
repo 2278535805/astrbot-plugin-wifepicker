@@ -1,12 +1,14 @@
 from astrbot.api.event import AstrMessageEvent
 
 from ..utils import is_allowed_group
+from ..core import get_active_user_days
 
 
 async def cmd_show_help(plugin_instance, event: AstrMessageEvent):
     if not is_allowed_group(str(event.get_group_id()), plugin_instance.config):
         return
     daily_limit = plugin_instance.config.get("daily_limit", 3)
+    active_user_days = get_active_user_days(plugin_instance)
     help_text = (
         "===== 🌸 抽老婆帮助 =====\n"
         "1. 【抽老婆】：随机抽取今日老婆\n"
@@ -19,6 +21,6 @@ async def cmd_show_help(plugin_instance, event: AstrMessageEvent):
         f"当前每日上限：{daily_limit}次\n"
         "提示：可在配置开启“关键词触发”，直接发送关键词无需 / 前缀。\n"
         "提示：可在配置开启“自动设置对方老婆 / 定时自动撤回”。\n"
-        "注：仅限30天内发言且当前在群的活跃群友。"
+        f"注：仅限{active_user_days}天内发言且当前在群的活跃群友。"
     )
     yield event.plain_result(help_text)

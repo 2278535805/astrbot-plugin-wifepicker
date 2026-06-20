@@ -10,6 +10,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 )
 
 from ..onebot_api import extract_message_id
+from .debug import debug_log
 from .utils import (
     save_json,
     normalize_user_id_set,
@@ -36,6 +37,44 @@ def _get_active_users_trim_limit(plugin) -> int:
     except Exception:
         max_total = 500
     return max(0, max_total)
+
+
+def get_active_user_days(plugin) -> int:
+    raw = plugin.config.get("active_user_days", 30)
+    try:
+        days = int(float(raw))
+    except Exception:
+        days = 30
+    return min(30, max(1, days))
+
+
+def _log_active_cleanup(plugin, message: str) -> None:
+    debug_log(plugin, "active_cleanup", message)
+
+
+def _normalize_active_timestamp(ts: object, *, now: float) -> float | None:
+    try:
+        ts_value = float(ts)
+    except Exception:
+        return None
+
+    while ts_value > now + 86400 and ts_value > 10_000_000_000:
+        ts_value = ts_value / 1000
+    return ts_value
+
+
+def _is_recent_active_timestamp(ts: object, *, now: float, limit: int) -> bool:
+    ts_value = _normalize_active_timestamp(ts, now=now)
+    if ts_value is None:
+        return False
+    return now - ts_value < limit
+
+
+def _format_active_timestamp_samples(samples: list[tuple[float, str, str, object]]) -> list[str]:
+    formatted = []
+    for age_days, gid, uid, raw_ts in samples[:8]:
+        formatted.append(f"{gid}/{uid}:age={age_days:.2f}d raw={raw_ts}")
+    return formatted
 
 
 def _recount_active_users(plugin) -> int:
@@ -89,6 +128,16 @@ def _trim_active_users_to_limit(plugin, *, max_total: int | None = None) -> bool
 
 def save_active_users(plugin, *, force_trim: bool = False) -> None:
     now = time.time()
+    if force_trim:
+        cleanup_stats = cleanup_inactive(plugin, save=False)
+        _log_active_cleanup(
+            plugin,
+            "force_trim pre-clean "
+            f"days={cleanup_stats['days']} groups={cleanup_stats['groups']} "
+            f"before={cleanup_stats['before']} after={cleanup_stats['after']} "
+            f"removed={cleanup_stats['removed']} active_file={plugin.active_file}",
+        )
+
     max_total = _get_active_users_trim_limit(plugin)
     current_total = getattr(plugin, "_active_user_count", None)
     if not isinstance(current_total, int) or current_total < 0:
@@ -384,23 +433,80 @@ def can_onebot_withdraw(plugin, event) -> bool:
     return auto_withdraw_enabled(plugin) and event.get_platform_name() == "aiocqhttp"
 
 
-def cleanup_inactive(plugin, group_id: str):
-    if group_id not in plugin.active_users:
-        return
-    now, limit = time.time(), 30 * 24 * 3600
-    active_group = plugin.active_users[group_id]
-    new_active = {uid: ts for uid, ts in active_group.items() if (now - ts < limit) and uid != "0"}
-    if len(active_group) != len(new_active):
-        removed_count = len(active_group) - len(new_active)
+def cleanup_inactive(plugin, group_id: str | None = None, *, save: bool = True):
+    days = get_active_user_days(plugin)
+    now, limit = time.time(), days * 24 * 3600
+    if group_id is None:
+        group_ids = list(plugin.active_users.keys())
+    else:
+        group_ids = [str(group_id)]
+
+    changed = False
+    before_total = count_active_users(plugin.active_users)
+    removed_total = 0
+    changed_groups: list[str] = []
+    oldest_samples: list[tuple[float, str, str, object]] = []
+    debug_enabled = bool(plugin.config.get("debug_enabled", False))
+    for gid in group_ids:
+        if gid not in plugin.active_users:
+            continue
+        active_group = plugin.active_users[gid]
+        if not isinstance(active_group, dict):
+            plugin.active_users.pop(gid, None)
+            changed = True
+            changed_groups.append(f"{gid}:invalid")
+            continue
+
+        before_group_count = len(active_group)
+        if debug_enabled:
+            for uid, ts in active_group.items():
+                ts_value = _normalize_active_timestamp(ts, now=now)
+                if ts_value is None:
+                    age_days = 999999.0
+                else:
+                    age_days = (now - ts_value) / 86400
+                oldest_samples.append((age_days, str(gid), str(uid), ts))
+
+        new_active = {
+            uid: ts
+            for uid, ts in active_group.items()
+            if uid != "0" and _is_recent_active_timestamp(ts, now=now, limit=limit)
+        }
+        if len(active_group) == len(new_active):
+            continue
+
         if new_active:
-            plugin.active_users[group_id] = new_active
+            plugin.active_users[gid] = new_active
         else:
-            plugin.active_users.pop(group_id, None)
+            plugin.active_users.pop(gid, None)
+        removed_count = before_group_count - len(new_active)
+        removed_total += removed_count
+        changed_groups.append(f"{gid}:{before_group_count}->{len(new_active)}")
+        changed = True
 
-        current_total = getattr(plugin, "_active_user_count", None)
-        if isinstance(current_total, int) and current_total >= 0:
-            plugin._active_user_count = max(0, current_total - removed_count)
-        else:
-            plugin._active_user_count = count_active_users(plugin.active_users)
-
+    if changed:
+        plugin._active_user_count = count_active_users(plugin.active_users)
+    after_total = count_active_users(plugin.active_users)
+    stats = {
+        "days": days,
+        "groups": len(group_ids),
+        "before": before_total,
+        "after": after_total,
+        "removed": removed_total,
+        "changed": changed,
+        "changed_groups": changed_groups,
+        "save": save,
+    }
+    oldest_samples.sort(reverse=True)
+    _log_active_cleanup(
+        plugin,
+        "cleanup "
+        f"scope={'all' if group_id is None else group_id} days={days} "
+        f"groups={len(group_ids)} before={before_total} after={after_total} "
+        f"removed={removed_total} changed={changed} save={save} "
+        f"changed_groups={changed_groups[:10]} "
+        f"oldest_samples={_format_active_timestamp_samples(oldest_samples)}",
+    )
+    if changed and save:
         save_active_users(plugin)
+    return stats

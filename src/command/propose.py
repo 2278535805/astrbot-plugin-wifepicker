@@ -13,6 +13,7 @@ from ..core import (
     get_group_records,
     get_propose_cooldown_status,
     set_propose_cooldown,
+    upsert_user_wife_record,
 )
 from ..utils import extract_target_id_from_message, resolve_member_name, save_json
 
@@ -291,29 +292,23 @@ async def handle_propose_response(plugin_instance, event: AstrMessageEvent):
 
             timestamp = datetime.now().isoformat()
             group_records = get_group_records(plugin_instance, group_id)
-            group_records[:] = [
-                r
-                for r in group_records
-                if r["user_id"] not in [user_id, proposer_id]
-            ]
-
-            marriage_data = [
-                {
-                    "user_id": proposer_id,
-                    "wife_id": user_id,
-                    "wife_name": target_name,
-                    "timestamp": timestamp,
-                    "forced": True,
-                },
-                {
-                    "user_id": user_id,
-                    "wife_id": proposer_id,
-                    "wife_name": proposer_name,
-                    "timestamp": timestamp,
-                    "forced": True,
-                },
-            ]
-            group_records.extend(marriage_data)
+            daily_limit = plugin_instance.config.get("daily_limit", 1)
+            upsert_user_wife_record(
+                group_records,
+                user_id=proposer_id,
+                wife_id=user_id,
+                wife_name=target_name,
+                timestamp=timestamp,
+                daily_limit=daily_limit,
+            )
+            upsert_user_wife_record(
+                group_records,
+                user_id=user_id,
+                wife_id=proposer_id,
+                wife_name=proposer_name,
+                timestamp=timestamp,
+                daily_limit=daily_limit,
+            )
 
             now = time.time()
             set_propose_cooldown(

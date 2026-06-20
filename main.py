@@ -45,6 +45,7 @@ from .src.core import (
     draw_excluded_users,
     force_marry_excluded_users,
     get_group_records,
+    upsert_user_wife_record,
     get_force_marry_cooldown_status,
     get_propose_cooldown_status,
     get_active_user_days,
@@ -531,19 +532,14 @@ class RandomWifePlugin(Star):
         clean_rbq_stats(self)  # 记录时顺便清理
         save_json(self.rbq_stats_file, self.rbq_stats)
 
-        # 移除该群该用户今日的其他老婆记录
-        group_records[:] = [r for r in group_records if r["user_id"] != user_id]
-
-        # 插入强娶记录
         timestamp = datetime.now().isoformat()
-        group_records.append(
-            {
-                "user_id": user_id,
-                "wife_id": target_id,
-                "wife_name": target_name,
-                "timestamp": timestamp,
-                "forced": True,
-            }
+        upsert_user_wife_record(
+            group_records,
+            user_id=user_id,
+            wife_id=target_id,
+            wife_name=target_name,
+            timestamp=timestamp,
+            daily_limit=self.config.get("daily_limit", 1),
         )
 
         maybe_add_other_half_record(

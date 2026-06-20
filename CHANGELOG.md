@@ -7,6 +7,9 @@
 
 优化活跃人数的存盘逻辑，避免磁盘I/O过大：[#22](https://github.com/Heximiao/astrbot-plugin-wifepicker/issues/22)
 
+
+添加求婚被拒绝的情况，并进入强娶逻辑，添加重置求婚时间的指令
+
 ## 2026.6.7更新
 修复@bot 强娶 @用户时对象被解析到bot的问题：[#21](https://github.com/Heximiao/astrbot-plugin-wifepicker/issues/21)
 

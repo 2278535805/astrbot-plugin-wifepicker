@@ -18,6 +18,12 @@ from ..utils import extract_target_id_from_message, resolve_member_name, save_js
 # 群内待处理的求婚请求
 propose_requests = {}
 
+# 群内待确认的拒绝后强娶请求
+force_confirm_requests = {}
+
+PROPOSE_RESPONSE_SECONDS = 30
+FORCE_CONFIRM_SECONDS = 30
+
 
 def _cleanup_expired_requests(group_id: str) -> None:
     group_requests = propose_requests.get(group_id)
@@ -35,6 +41,26 @@ def _cleanup_expired_requests(group_id: str) -> None:
 
     if not group_requests:
         propose_requests.pop(group_id, None)
+
+
+def _cleanup_expired_force_confirmations(group_id: str) -> None:
+    group_requests = force_confirm_requests.get(group_id)
+    if not isinstance(group_requests, dict):
+        return
+
+    now = time.time()
+    expired_user_ids = [
+        user_id
+        for user_id, req in group_requests.items()
+        if not isinstance(req, dict)
+        or not isinstance(req.get("expire"), (int, float))
+        or req["expire"] <= now
+    ]
+    for user_id in expired_user_ids:
+        group_requests.pop(user_id, None)
+
+    if not group_requests:
+        force_confirm_requests.pop(group_id, None)
 
 
 def _is_request_expired(req: dict, now: float | None = None) -> bool:
@@ -85,6 +111,16 @@ def _delete_requests_by_proposer(group_id: str, proposer_id: str) -> None:
 
     if not group_requests:
         propose_requests.pop(group_id, None)
+
+
+def _delete_force_confirmation(group_id: str, proposer_id: str) -> None:
+    group_requests = force_confirm_requests.get(group_id)
+    if not isinstance(group_requests, dict):
+        return
+
+    group_requests.pop(proposer_id, None)
+    if not group_requests:
+        force_confirm_requests.pop(group_id, None)
 
 
 def _format_remaining_seconds(seconds: float) -> str:
@@ -173,16 +209,16 @@ async def cmd_propose(plugin_instance, event: AstrMessageEvent):
         "proposer_id": user_id,
         "proposer_name": event.get_sender_name() or f"用户({user_id})",
         "target_name": target_name,
-        "expire": now + 30,
+        "expire": now + PROPOSE_RESPONSE_SECONDS,
         "umo": event.unified_msg_origin,
     }
 
     yield event.plain_result(
         f"🌹 @{event.get_sender_name()} 向【{target_name}】发起了求婚！\n"
-        '请在 30 秒内回复“同意”来接受。'
+        '请在 30 秒内回复“同意”来接受，或回复“拒绝”来拒绝。'
     )
 
-    await asyncio.sleep(30)
+    await asyncio.sleep(PROPOSE_RESPONSE_SECONDS)
     if group_id in propose_requests and target_id in propose_requests[group_id]:
         req = propose_requests[group_id][target_id]
         if req["proposer_id"] == user_id:
@@ -203,10 +239,30 @@ async def cmd_propose(plugin_instance, event: AstrMessageEvent):
 
 
 async def handle_propose_response(plugin_instance, event: AstrMessageEvent):
-    """处理同意求婚的回复"""
+    """处理求婚回复和拒绝后的强娶确认。"""
     group_id = str(event.get_group_id())
     user_id = str(event.get_sender_id())
     msg = event.message_str.strip()
+
+    _cleanup_expired_force_confirmations(group_id)
+    force_req = force_confirm_requests.get(group_id, {}).get(user_id)
+    if isinstance(force_req, dict):
+        if _is_request_expired(force_req):
+            _delete_force_confirmation(group_id, user_id)
+        elif msg in ["是", "确认", "强娶", "要"]:
+            target_id = str(force_req["target_id"])
+            _delete_force_confirmation(group_id, user_id)
+            event.stop_event()
+            async for result in plugin_instance._cmd_force_marry(
+                event, target_id_override=target_id
+            ):
+                yield result
+            return
+        elif msg in ["否", "不", "不要", "算了", "取消"]:
+            _delete_force_confirmation(group_id, user_id)
+            event.stop_event()
+            yield event.plain_result("已取消强娶。")
+            return
 
     _cleanup_expired_requests(group_id)
     if group_id in propose_requests and user_id in propose_requests[group_id]:
@@ -289,3 +345,26 @@ async def handle_propose_response(plugin_instance, event: AstrMessageEvent):
                 f"🎉 恭喜！{target_name} 接受了 {proposer_name} 的求婚！\n"
                 "你们已正式结为夫妻！"
             )
+        elif msg in ["拒绝求婚", "我拒绝", "拒绝", "不同意"]:
+            proposer_id = req["proposer_id"]
+            target_name = req["target_name"]
+            _delete_request(group_id, user_id)
+
+            if group_id not in force_confirm_requests:
+                force_confirm_requests[group_id] = {}
+            force_confirm_requests[group_id][proposer_id] = {
+                "target_id": user_id,
+                "target_name": target_name,
+                "expire": time.time() + FORCE_CONFIRM_SECONDS,
+                "umo": event.unified_msg_origin,
+            }
+
+            event.stop_event()
+            chain = [
+                Comp.At(qq=proposer_id),
+                Comp.Plain(
+                    f" 很遗憾，【{target_name}】拒绝了你的求婚。\n"
+                    "是否强娶？请在 30 秒内回复“是”，否则不会进入强娶逻辑。"
+                ),
+            ]
+            yield event.chain_result(chain)

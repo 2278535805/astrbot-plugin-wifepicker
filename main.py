@@ -23,6 +23,7 @@ from .waifu_relations import maybe_add_other_half_record
 from .src.command.help import cmd_show_help
 from .src.command.propose import cmd_propose, handle_propose_response
 from .src.command.relationdiagram import cmd_show_graph
+from .src.command.reset_propose_cd import cmd_reset_propose_cd
 
 from .src.constants import _DEFAULT_KEYWORD_ROUTES
 from .src.utils import (
@@ -513,7 +514,9 @@ class RandomWifePlugin(Star):
         async for result in self._cmd_force_marry(event):
             yield result
 
-    async def _cmd_force_marry(self, event: AstrMessageEvent):
+    async def _cmd_force_marry(
+        self, event: AstrMessageEvent, target_id_override: str | None = None
+    ):
         """强娶 + @要娶的那个人"""
         if event.is_private_chat():
             yield event.plain_result("此功能仅在群聊中可用哦~")
@@ -542,7 +545,11 @@ class RandomWifePlugin(Star):
             )
             return
 
-        target_id = extract_target_id_from_message(event)
+        target_id = (
+            str(target_id_override)
+            if target_id_override
+            else extract_target_id_from_message(event)
+        )
 
         if not target_id or target_id == "all":
             yield event.plain_result("请 @ 一个你想强娶的人。")
@@ -783,6 +790,12 @@ class RandomWifePlugin(Star):
             yield event.plain_result("✅ 本群强娶冷却时间已重置！现在大家可以再次强娶了。")
         else:
             yield event.plain_result("💡 本群目前没有人在冷却期内。")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("重置求婚时间", alias={"czqhsj"})
+    async def reset_propose_cd(self, event: AstrMessageEvent):
+        async for result in cmd_reset_propose_cd(self, event):
+            yield result
 
     @filter.command("抽老婆帮助", alias={"老婆插件帮助", "clpbz"})
     async def show_help(self, event: AstrMessageEvent):

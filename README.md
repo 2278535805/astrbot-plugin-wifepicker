@@ -46,7 +46,7 @@
 本插件的关系图功能依赖于 AstrBot 的浏览器渲染引擎（环境一般astrbot自带，不用管）：
 
 1. **Playwright**：请确保你的 AstrBot 环境已安装 `Playwright` 浏览器驱动（AstrBot 通常自带）。
-2. **模板文件**：插件目录下需包含 `graph_template.html` 和 `rbq_ranking.html`。
+2. **模板文件**：插件目录下需包含 `template/graph_template.html` 和 `template/rbq_ranking.html`。
 
 ## ⚙️ 配置项说明
 

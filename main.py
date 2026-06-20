@@ -713,7 +713,7 @@ class RandomWifePlugin(Star):
             user["rank"] = current_rank
 
         # 读取新模板
-        template_path = os.path.join(self.curr_dir, "rbq_ranking.html")
+        template_path = os.path.join(self.curr_dir, "template", "rbq_ranking.html")
         if not os.path.exists(template_path):
             yield event.plain_result("错误：找不到排行模板 rbq_ranking.html")
             return

@@ -24,7 +24,9 @@ async def cmd_show_graph(plugin_instance, event: AstrMessageEvent):
     # ---------------------------
 
     # 1. 读取模板文件内容
-    template_path = os.path.join(plugin_instance.curr_dir, "graph_template.html")
+    template_path = os.path.join(
+        plugin_instance.curr_dir, "template", "graph_template.html"
+    )
     if not os.path.exists(template_path):
         yield event.plain_result(f"错误：找不到模板文件 {template_path}")
         return

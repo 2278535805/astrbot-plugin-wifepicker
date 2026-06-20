@@ -75,7 +75,7 @@ async def run_debug_graph(plugin_instance, event):
         }
     
     # 1. 渲染并保存 HTML 供检查
-    template_path = os.path.join(curr_dir, "graph_template.html")
+    template_path = os.path.join(curr_dir, "template", "graph_template.html")
     if not os.path.exists(template_path):
         yield event.plain_result(f"错误：找不到模板文件 {template_path}")
         return

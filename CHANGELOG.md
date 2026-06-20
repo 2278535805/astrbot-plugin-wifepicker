@@ -1,6 +1,12 @@
 ## 小贴士2026.2.11
 请注意！！！使用强娶并@对方时请**长按对方头像@**，或者点击@别人时QQ跳出来的那一栏的名字，不要直接输入名字！！！不要复制黏贴名字！！！只有长按对方头像或者点击跳出来的那个的@才是真的@了对方！！！不然插件没办法获取到QQ号，这一点目前astrbot的所有插件都是一样的
 
+## 2026.6.20更新
+添加全局debug模式，添加用户可配置的活跃用户排除天数：[#16]：(https://github.com/Heximiao/astrbot-plugin-wifepicker/issues/16)
+
+
+优化活跃人数的存盘逻辑，避免磁盘I/O过大：[#22](https://github.com/Heximiao/astrbot-plugin-wifepicker/issues/22)
+
 ## 2026.6.7更新
 修复@bot 强娶 @用户时对象被解析到bot的问题：[#21](https://github.com/Heximiao/astrbot-plugin-wifepicker/issues/21)
 

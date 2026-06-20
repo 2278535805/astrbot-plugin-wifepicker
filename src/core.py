@@ -20,6 +20,7 @@ from .utils import (
 
 
 ACTIVE_USERS_TRIM_INTERVAL_SECONDS = 3600
+ACTIVE_USERS_SAVE_INTERVAL_SECONDS = 120
 
 
 def count_active_users(active_users: dict) -> int:
@@ -126,10 +127,60 @@ def _trim_active_users_to_limit(plugin, *, max_total: int | None = None) -> bool
     return True
 
 
-def save_active_users(plugin, *, force_trim: bool = False) -> None:
+def _mark_active_users_dirty(plugin) -> None:
+    plugin._active_users_dirty = True
+
+
+def flush_active_users(plugin, *, force: bool = False) -> None:
+    dirty = bool(getattr(plugin, "_active_users_dirty", False))
+    if not force and not dirty:
+        return
+
+    save_json(plugin.active_file, plugin.active_users)
+    plugin._active_users_dirty = False
+    plugin._active_users_last_save_at = time.time()
+
+
+async def _active_users_save_loop(plugin) -> None:
+    while True:
+        await asyncio.sleep(plugin._active_users_save_interval_seconds)
+        flush_active_users(plugin)
+
+
+def start_active_users_save_task(plugin) -> None:
+    task = getattr(plugin, "_active_users_save_task", None)
+    if task is not None and not task.done():
+        return
+
+    try:
+        plugin._active_users_save_task = asyncio.create_task(
+            _active_users_save_loop(plugin)
+        )
+    except RuntimeError:
+        plugin._active_users_save_task = None
+
+
+async def stop_active_users_save_task(plugin) -> None:
+    task = getattr(plugin, "_active_users_save_task", None)
+    if task is None:
+        return
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    plugin._active_users_save_task = None
+
+
+def save_active_users(
+    plugin, *, force_trim: bool = False, force: bool = False, mark_dirty: bool = True
+) -> None:
     now = time.time()
+    changed = mark_dirty or force_trim
     if force_trim:
         cleanup_stats = cleanup_inactive(plugin, save=False)
+        changed = changed or bool(cleanup_stats.get("changed"))
         _log_active_cleanup(
             plugin,
             "force_trim pre-clean "
@@ -161,10 +212,27 @@ def save_active_users(plugin, *, force_trim: bool = False) -> None:
             or current_total - max_total >= overflow_limit
             or now - last_trim_at >= trim_interval
         ):
-            _trim_active_users_to_limit(plugin, max_total=max_total)
+            changed = _trim_active_users_to_limit(plugin, max_total=max_total) or changed
             plugin._active_users_last_trim_at = now
 
-    save_json(plugin.active_file, plugin.active_users)
+    if changed:
+        _mark_active_users_dirty(plugin)
+
+    last_save_at = float(getattr(plugin, "_active_users_last_save_at", now) or now)
+    save_interval = getattr(
+        plugin,
+        "_active_users_save_interval_seconds",
+        ACTIVE_USERS_SAVE_INTERVAL_SECONDS,
+    )
+    try:
+        save_interval = max(1, int(save_interval))
+    except Exception:
+        save_interval = ACTIVE_USERS_SAVE_INTERVAL_SECONDS
+
+    if force or now - last_save_at >= save_interval:
+        flush_active_users(plugin, force=force)
+    else:
+        start_active_users_save_task(plugin)
 
 
 async def send_onebot_message(plugin, event, *, message: list[dict]) -> object:
@@ -233,7 +301,8 @@ def record_active(plugin, event) -> None:
         else:
             plugin._active_user_count = count_active_users(plugin.active_users)
 
-    save_active_users(plugin)
+    _mark_active_users_dirty(plugin)
+    save_active_users(plugin, mark_dirty=False)
 
 
 def clean_rbq_stats(plugin) -> None:

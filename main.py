@@ -38,6 +38,7 @@ from .src.debug import debug_log
 from .src.debug_utils import run_debug_graph
 # 新增：导入 core helpers
 from .src.core import (
+    ACTIVE_USERS_SAVE_INTERVAL_SECONDS,
     ACTIVE_USERS_TRIM_INTERVAL_SECONDS,
     count_active_users,
     send_onebot_message,
@@ -57,6 +58,8 @@ from .src.core import (
     can_onebot_withdraw,
     cleanup_inactive,
     save_active_users,
+    start_active_users_save_task,
+    stop_active_users_save_task,
 )
 
 
@@ -101,8 +104,13 @@ class RandomWifePlugin(Star):
         self.marriage_action_records = load_json(self.marriage_action_file, {})
         self.rbq_stats = load_json(self.rbq_stats_file, {})
         self._active_user_count = count_active_users(self.active_users)
+        self._active_users_dirty = False
+        self._active_users_last_save_at = time.time()
+        self._active_users_save_interval_seconds = ACTIVE_USERS_SAVE_INTERVAL_SECONDS
+        self._active_users_save_task: asyncio.Task | None = None
         self._active_users_last_trim_at = 0.0
         self._active_users_trim_interval_seconds = ACTIVE_USERS_TRIM_INTERVAL_SECONDS
+        start_active_users_save_task(self)
 
         self._keyword_router = KeywordRouter(routes=_DEFAULT_KEYWORD_ROUTES)
         self._keyword_handlers = {
@@ -801,8 +809,9 @@ class RandomWifePlugin(Star):
             yield result
 
     async def terminate(self):
+        await stop_active_users_save_task(self)
         save_json(self.records_file, self.records)
-        save_active_users(self, force_trim=True)
+        save_active_users(self, force_trim=True, force=True)
         save_json(self.forced_file, self.forced_records)
         save_json(self.marriage_action_file, self.marriage_action_records)
         save_json(self.rbq_stats_file, self.rbq_stats)

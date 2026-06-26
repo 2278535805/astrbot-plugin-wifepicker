@@ -120,5 +120,11 @@
         "description": "是否 @ 抽到的老婆",
         "hint": "开启后，抽到老婆或强娶时会额外 @ 对方。默认关闭。",
         "default": false
+    },
+    "recency_weight_enabled": {
+        "type": "bool",
+        "description": "近期选取权重",
+        "hint": "开启后，随机抽取老婆时会优先选取近期没有被抽到过的群友。越久没被抽中权重越高，从未被抽中的人权重最高。默认开启。",
+        "default": true
     }
 }

@@ -532,6 +532,24 @@ def can_onebot_withdraw(plugin, event) -> bool:
     return auto_withdraw_enabled(plugin) and event.get_platform_name() == "aiocqhttp"
 
 
+def recency_weight_enabled(plugin) -> bool:
+    return bool(plugin.config.get("recency_weight_enabled", True))
+
+
+def compute_wife_weights(pool: list[str], group_records: list[dict]) -> list[float]:
+    picked_today: dict[str, int] = {}
+    for record in group_records:
+        wife_id = str(record.get("wife_id", ""))
+        if wife_id:
+            picked_today[wife_id] = picked_today.get(wife_id, 0) + 1
+
+    weights = []
+    for uid in pool:
+        count = picked_today.get(uid, 0)
+        weights.append(1.0 if count > 0 else 2.0)
+    return weights
+
+
 def cleanup_inactive(plugin, group_id: str | None = None, *, save: bool = True):
     days = get_active_user_days(plugin)
     now, limit = time.time(), days * 24 * 3600

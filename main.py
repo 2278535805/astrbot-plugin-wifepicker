@@ -55,6 +55,8 @@ from .src.core import (
     save_active_users,
     start_active_users_save_task,
     stop_active_users_save_task,
+    compute_wife_weights,
+    recency_weight_enabled,
 )
 
 
@@ -336,7 +338,19 @@ class RandomWifePlugin(Star):
             yield event.plain_result(f"老婆池为空（需有人在{get_active_user_days(self)}天内发言）。")
             return
 
-        wife_id = random.choice(pool)
+        if recency_weight_enabled(self):
+            weights = compute_wife_weights(
+                pool, group_records
+            )
+            wife_id = random.choices(pool, weights=weights, k=1)[0]
+            debug_log(
+                self,
+                "draw",
+                f"weighted_select group={group_id} candidate={wife_id} "
+                f"pool_size={len(pool)} min_w={min(weights):.1f} max_w={max(weights):.1f}",
+            )
+        else:
+            wife_id = random.choice(pool)
         wife_name = f"用户({wife_id})"
         user_name = event.get_sender_name() or f"用户({user_id})"
 

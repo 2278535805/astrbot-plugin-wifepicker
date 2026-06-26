@@ -27,9 +27,13 @@ async def cmd_show_history(plugin_instance, event: AstrMessageEvent):
         return
 
     daily_limit = plugin_instance.config.get("daily_limit", 3)
-    res = [f"🌸 你今日的老婆记录 ({len(user_recs)}/{daily_limit})："]
+    if daily_limit > 0:
+        res = [f"🌸 你今日的老婆记录 ({len(user_recs)}/{daily_limit})："]
+    else:
+        res = [f"🌸 你今日的老婆记录 ({len(user_recs)})："]
     for i, r in enumerate(user_recs, 1):
         time_str = datetime.fromisoformat(r["timestamp"]).strftime("%H:%M")
         res.append(f"{i}. 【{r['wife_name']}】 ({time_str})")
-    res.append(f"\n剩余次数：{max(0, daily_limit - len(user_recs))}次")
+    if daily_limit > 0:
+        res.append(f"\n剩余次数：{max(0, daily_limit - len(user_recs))}次")
     yield event.plain_result("\n".join(res))

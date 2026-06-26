@@ -223,7 +223,7 @@ class RandomWifePlugin(Star):
             f"daily group={group_id} user={user_id} today_count={today_count} limit={daily_limit}",
         )
 
-        if today_count >= daily_limit:
+        if daily_limit > 0 and today_count >= daily_limit:
             debug_log(self, "draw", f"hit daily limit group={group_id} user={user_id}")
             if daily_limit == 1:
                 wife_record = user_recs[0]
@@ -388,10 +388,9 @@ class RandomWifePlugin(Star):
         save_json(self.records_file, self.records, self.records_file, self.config)
 
         avatar_url = f"https://q4.qlogo.cn/headimg_dl?dst_uin={wife_id}&spec=640"
-        suffix_text = (
-            "\n请好好对待她哦❤️~ \n"
-            f"剩余抽取次数：{max(0, daily_limit - today_count - 1)}次"
-        )
+        suffix_text = "\n请好好对待她哦❤️~"
+        if daily_limit > 0:
+            suffix_text += f"剩余抽取次数：{max(0, daily_limit - today_count - 1)}次"
         
         at_waifu_enabled = self.config.get("at_waifu", False)
         if can_onebot_withdraw(self, event):

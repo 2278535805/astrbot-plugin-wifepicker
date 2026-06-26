@@ -1,6 +1,5 @@
 import asyncio
 import heapq
-import random
 import time
 import os
 from datetime import datetime, timedelta
@@ -376,35 +375,6 @@ def get_group_records(plugin, group_id: str) -> list:
     if group_id not in plugin.records["groups"]:
         plugin.records["groups"][group_id] = {"records": []}
     return plugin.records["groups"][group_id]["records"]
-
-
-def upsert_user_wife_record(
-    records: list,
-    *,
-    user_id: str,
-    wife_id: str,
-    wife_name: str,
-    timestamp: str,
-    daily_limit: int,
-    forced: bool = True,
-) -> None:
-    new_record = {
-        "user_id": user_id,
-        "wife_id": wife_id,
-        "wife_name": wife_name,
-        "timestamp": timestamp,
-        "forced": forced,
-    }
-
-    user_indexes = [
-        index for index, record in enumerate(records) if str(record.get("user_id")) == user_id
-    ]
-    if daily_limit > 1 and user_indexes:
-        records[random.choice(user_indexes)] = new_record
-        return
-
-    records[:] = [record for record in records if str(record.get("user_id")) != user_id]
-    records.append(new_record)
 
 
 PROPOSE_COOLDOWN_SECONDS = 3600

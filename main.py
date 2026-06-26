@@ -45,7 +45,6 @@ from .src.core import (
     draw_excluded_users,
     force_marry_excluded_users,
     get_group_records,
-    upsert_user_wife_record,
     get_force_marry_cooldown_status,
     get_propose_cooldown_status,
     get_active_user_days,
@@ -216,7 +215,7 @@ class RandomWifePlugin(Star):
 
         daily_limit = self.config.get("daily_limit", 1)
         group_records = get_group_records(self, group_id)
-        user_recs = [r for r in group_records if r["user_id"] == user_id]
+        user_recs = [r for r in group_records if r["user_id"] == user_id and not r.get("forced")]
         today_count = len(user_recs)
         debug_log(
             self,
@@ -547,13 +546,14 @@ class RandomWifePlugin(Star):
         save_json(self.rbq_stats_file, self.rbq_stats)
 
         timestamp = datetime.now().isoformat()
-        upsert_user_wife_record(
-            group_records,
-            user_id=user_id,
-            wife_id=target_id,
-            wife_name=target_name,
-            timestamp=timestamp,
-            daily_limit=self.config.get("daily_limit", 1),
+        group_records.append(
+            {
+                "user_id": user_id,
+                "wife_id": target_id,
+                "wife_name": target_name,
+                "timestamp": timestamp,
+                "forced": True,
+            }
         )
 
         maybe_add_other_half_record(
